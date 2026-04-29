@@ -91,8 +91,13 @@ client.on('qr', (qr) => {
   console.log('\n🔗 סרוק QR מ: /qr\n');
 });
 
+let _startupNotified = false;
 client.on('ready', () => {
   console.log('✅ הבוט מחובר לוואטסאפ ומוכן לפעולה!');
+  if (!_startupNotified) {
+    _startupNotified = true;
+    sendMessage(OWNER, `🚀 הבוט עלה!\n\nפקודות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nתשובה <טלפון> <טקסט> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nחסום/שחרר <טלפון>\nרשימה – ממתינים לאישור\nתורים היום\nסטטיסטיקה\nשלח לכולם <הודעה>`).catch(() => {});
+  }
   checkPostTreatments();
   checkReminders();
   checkFollowUps();
@@ -312,10 +317,7 @@ async function handleOwnerCommand(body) {
     return;
   }
 
-  await sendMessage(
-    OWNER,
-    `פקודות זמינות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nתשובה <טלפון> <תשובה> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nחסום <טלפון> – חסימת מספר\nשחרר <טלפון> – שחרור חסימה\nרשימה – בקשות ממתינות\nתורים היום – תורים להיום\nסטטיסטיקה – נתוני קליניקה\nשלח לכולם <הודעה> – שיווק ללקוחות`
-  );
+  // unrecognized command — no reply to avoid feedback loops
 }
 
 // ── Daily summary ─────────────────────────────────────────────────────────────

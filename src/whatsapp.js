@@ -61,10 +61,7 @@ async function connect() {
     if (type !== 'notify') return;
     for (const raw of messages) {
       if (!raw.message) continue;
-      if (raw.key.fromMe) {
-        const selfJid = `${process.env.ADMIN_NUMBER}@s.whatsapp.net`;
-        if (raw.key.remoteJid !== selfJid) continue;
-      }
+      if (raw.key.fromMe) continue;
       _emitter.emit('message', _adapt(raw));
     }
   });
