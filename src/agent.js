@@ -197,18 +197,24 @@ export async function processMessage(phone, userMessage, history) {
     { role: 'user', content: userMessage },
   ];
 
+  const MODELS = ['openai/gpt-4o-mini', 'openai/gpt-oss-120b:free'];
   let response;
-  try {
-    response = await openai.chat.completions.create({
-      model: 'openai/gpt-oss-120b:free',
-      messages,
-      tools: TOOLS,
-      tool_choice: 'auto',
-      max_tokens: 1024,
-    }, { timeout: 30_000 });
-  } catch (err) {
-    console.error('OpenRouter API error:', err.message);
-    return 'מצטערים, אירעה תקלה טכנית זמנית 🙏 אנא נסה שוב בעוד כמה דקות';
+  for (const model of MODELS) {
+    try {
+      response = await openai.chat.completions.create({
+        model,
+        messages,
+        tools: TOOLS,
+        tool_choice: 'auto',
+        max_tokens: 1024,
+      }, { timeout: 30_000 });
+      break;
+    } catch (err) {
+      console.error(`OpenRouter error (${model}):`, err.message);
+      if (model === MODELS[MODELS.length - 1]) {
+        return 'מצטערים, אירעה תקלה טכנית זמנית 🙏 אנא נסה שוב בעוד כמה דקות';
+      }
+    }
   }
 
   const choice = response.choices?.[0];
