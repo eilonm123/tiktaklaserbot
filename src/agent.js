@@ -231,8 +231,8 @@ export async function processMessage(phone, userMessage, history) {
       const cancelled = cancelCustomerAppointment(phone);
       if (!cancelled) return 'לא מצאתי תור פעיל לביטול 😊 צור קשר ישירות אם צריך עזרה';
       const notify = `❌ ${cancelled.name} ביטל/ה את התור ל-${cancelled.date} בשעה ${cancelled.time}`;
-      const recipients = [`${process.env.OWNER_NUMBER}@c.us`];
-      if (process.env.ADMIN_NUMBER) recipients.push(`${process.env.ADMIN_NUMBER}@c.us`);
+      const recipients = [`${process.env.OWNER_NUMBER}@s.whatsapp.net`];
+      if (process.env.ADMIN_NUMBER) recipients.push(`${process.env.ADMIN_NUMBER}@s.whatsapp.net`);
       for (const r of recipients) {
         try { await sendMessage(r, notify); } catch (err) { console.error('שגיאה בהודעת ביטול:', err.message); }
       }
@@ -251,7 +251,7 @@ export async function processMessage(phone, userMessage, history) {
     if (toolCall.function.name === 'ask_owner') {
       try {
         await sendMessage(
-          `${process.env.OWNER_NUMBER}@c.us`,
+          `${process.env.OWNER_NUMBER}@s.whatsapp.net`,
           `❓ שאלה מלקוח ${formatPhone(phone)}:\n${input.question}\n\nלמענה: תשובה ${phone} <תשובתך>`
         );
       } catch (err) {
@@ -305,8 +305,8 @@ export async function processMessage(phone, userMessage, history) {
       input.date, input.time, 'standard', gender, input.notes || ''
     );
 
-    const recipients = [`${process.env.OWNER_NUMBER}@c.us`];
-    if (process.env.ADMIN_NUMBER) recipients.push(`${process.env.ADMIN_NUMBER}@c.us`);
+    const recipients = [`${process.env.OWNER_NUMBER}@s.whatsapp.net`];
+    if (process.env.ADMIN_NUMBER) recipients.push(`${process.env.ADMIN_NUMBER}@s.whatsapp.net`);
     for (const recipient of recipients) {
       try {
         await sendMessage(recipient, ownerMsg);
