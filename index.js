@@ -30,7 +30,7 @@ import {
 } from './src/store.js';
 import {
   appointmentConfirmed, PRE_TREATMENT, POST_TREATMENT, MEDICAL_FORM,
-  followUpMessage, rebookNudge,
+  followUpMessage, rebookNudge, GOOGLE_REVIEW,
 } from './src/messages.js';
 import { createCalendarEvent } from './src/calendar.js';
 
@@ -247,6 +247,8 @@ async function handleOwnerCommand(body) {
   if (finishMatch) {
     const phone = finishMatch[1];
     await sendMessage(phone, POST_TREATMENT);
+    await sendMessage(phone, GOOGLE_REVIEW);
+    clearHistory(phone);
     await sendMessage(OWNER, `✅ הנחיות לאחר טיפול נשלחו ל-${formatPhone(phone)}`);
     return;
   }
@@ -386,6 +388,8 @@ async function checkPostTreatments() {
   for (const appt of due) {
     try {
       await sendMessage(appt.phone, POST_TREATMENT);
+      await sendMessage(appt.phone, GOOGLE_REVIEW);
+      clearHistory(appt.phone);
       markPostTreatmentSent(appt.id);
       await sendMessage(OWNER, `✅ הנחיות לאחר טיפול נשלחו אוטומטית ל-${formatPhone(appt.phone)} (${appt.name})`);
     } catch (err) {
