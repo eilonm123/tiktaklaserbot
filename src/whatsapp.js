@@ -61,7 +61,11 @@ async function connect() {
     if (type !== 'notify') return;
     for (const raw of messages) {
       if (!raw.message) continue;
-      if (raw.key.fromMe) continue;
+      if (raw.key.fromMe) {
+        // allow only self-chat (admin messaging themselves to send commands)
+        const ownJid = _ownPhone ? `${_ownPhone}@s.whatsapp.net` : null;
+        if (!ownJid || raw.key.remoteJid !== ownJid) continue;
+      }
       _emitter.emit('message', _adapt(raw));
     }
   });
