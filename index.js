@@ -69,6 +69,7 @@ function isRateLimited(phone) {
 // ── HTTP server (QR endpoint) ─────────────────────────────────────────────────
 const app = express();
 let latestQR = null;
+const recentMessages = [];
 
 app.get('/qr', async (req, res) => {
   if (!latestQR) return res.send('<h2>QR עוד לא מוכן — רענן עוד שנייה</h2>');
@@ -77,6 +78,7 @@ app.get('/qr', async (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/messages', (req, res) => res.json(recentMessages));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 שרת HTTP רץ על פורט ${PORT}`));
@@ -120,6 +122,8 @@ client.on('message', async (msg) => {
 });
 
 async function handleMsg(msg) {
+  recentMessages.unshift({ from: msg.from, body: msg.body, ts: msg.timestamp, time: new Date().toISOString() });
+  if (recentMessages.length > 20) recentMessages.pop();
   console.log(`📨 הודעה נכנסת: from=${msg.from} type=${msg.type} ts=${msg.timestamp} BOT_START=${BOT_START}`);
   if (msg.timestamp && msg.timestamp < BOT_START) { console.log('⏭️ הודעה ישנה — מדולגת'); return; }
   if (msg.from.endsWith('@g.us')) { console.log('⏭️ קבוצה — מדולגת'); return; }
