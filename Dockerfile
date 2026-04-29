@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 \
     libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 \
     libxtst6 ca-certificates fonts-liberation libnss3 \
-    xdg-utils wget fonts-freefont-ttf --no-install-recommends \
+    xdg-utils wget fonts-freefont-ttf libgbm1 --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
