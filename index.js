@@ -421,6 +421,7 @@ async function handleCustomerMessage(phone, body) {
 
   appendMessage(phone, 'user', body);
   appendMessage(phone, 'assistant', reply);
+  console.log(`💬 תשובה ל-${phone}: "${reply.slice(0, 60)}..."`);
   await sendMessage(phone, reply);
 }
 

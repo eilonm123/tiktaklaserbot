@@ -305,6 +305,7 @@ export async function processMessage(phone, userMessage, history) {
     };
 
     saveAppointment(appt);
+    console.log(`📅 תור נשמר: ${id} | ${input.customer_name} | ${input.date} ${input.time}`);
 
     const ownerMsg = ownerApprovalRequest(
       id, input.customer_name, formatPhone(phone), appt.areas,
@@ -316,6 +317,7 @@ export async function processMessage(phone, userMessage, history) {
     for (const recipient of recipients) {
       try {
         await sendMessage(recipient, ownerMsg);
+        console.log(`📤 בקשת אישור נשלחה ל-${recipient}`);
       } catch (err) {
         console.error(`שגיאה בשליחה ל-${recipient}:`, err.message);
       }
