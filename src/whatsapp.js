@@ -1,65 +1,104 @@
-import pkg from 'whatsapp-web.js';
-import { rmSync, readdirSync, existsSync } from 'fs';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
+import { EventEmitter } from 'events';
 import { join } from 'path';
-const { Client, LocalAuth } = pkg;
+import pino from 'pino';
 
-// מחיקת SingletonLock שנשאר מ-instance קודם
-try {
-  const authDir = join(process.cwd(), '.wwebjs_auth');
-  if (existsSync(authDir)) {
-    for (const session of readdirSync(authDir)) {
-      const lock = join(authDir, session, 'SingletonLock');
-      if (existsSync(lock)) { rmSync(lock); console.log('🔓 SingletonLock נמחק'); }
+const AUTH_DIR = join(process.cwd(), '.wwebjs_auth', 'baileys_auth');
+
+const _emitter = new EventEmitter();
+let _sock = null;
+
+async function connect() {
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+
+  _sock = makeWASocket({
+    auth: state,
+    logger: pino({ level: 'silent' }),
+    printQRInTerminal: false,
+    browser: ['TikTak Laser Bot', 'Chrome', '1.0'],
+  });
+
+  _sock.ev.on('creds.update', saveCreds);
+
+  _sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    if (qr) _emitter.emit('qr', qr);
+
+    if (connection === 'close') {
+      const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      _emitter.emit('disconnected', lastDisconnect?.error?.message || 'unknown');
+      if (code !== DisconnectReason.loggedOut) setTimeout(connect, 5000);
     }
-  }
-} catch { /* נמשיך גם אם נכשל */ }
 
-export const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: {
+    if (connection === 'open') _emitter.emit('ready');
+  });
 
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-extensions',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--disable-translate',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-breakpad',
-      '--disable-component-update',
-      '--disable-domain-reliability',
-      '--disable-hang-monitor',
-      '--disable-ipc-flooding-protection',
-      '--disable-renderer-backgrounding',
-      '--disable-speech-api',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--blink-settings=imagesEnabled=false',
-    ],
-  },
-});
+  _sock.ev.on('messages.upsert', ({ messages, type }) => {
+    if (type !== 'notify') return;
+    for (const raw of messages) {
+      if (!raw.message) continue;
+      if (raw.key.fromMe) {
+        const selfJid = `${process.env.ADMIN_NUMBER}@s.whatsapp.net`;
+        if (raw.key.remoteJid !== selfJid) continue;
+      }
+      _emitter.emit('message', _adapt(raw));
+    }
+  });
+}
+
+function _body(raw) {
+  const m = raw.message;
+  return m?.conversation
+    || m?.extendedTextMessage?.text
+    || m?.imageMessage?.caption
+    || m?.videoMessage?.caption
+    || '';
+}
+
+function _type(raw) {
+  const m = raw.message;
+  if (!m) return 'unknown';
+  if (m.audioMessage || m.pttMessage) return 'ptt';
+  if (m.imageMessage) return 'image';
+  if (m.videoMessage) return 'video';
+  return 'chat';
+}
+
+function _adapt(raw) {
+  return {
+    from:     raw.key.remoteJid,
+    fromMe:   raw.key.fromMe || false,
+    body:     _body(raw),
+    type:     _type(raw),
+    timestamp: Number(raw.messageTimestamp),
+    hasMedia: !!(raw.message?.imageMessage || raw.message?.videoMessage),
+    id:       { _serialized: raw.key.id },
+  };
+}
+
+export const client = {
+  on:         _emitter.on.bind(_emitter),
+  initialize: connect,
+  getState:   async () => _sock ? 'CONNECTED' : 'DISCONNECTED',
+};
 
 export function toChatId(phone) {
-  return phone.includes('@') ? phone : `${phone}@c.us`;
+  if (phone.includes('@g.us')) return phone;
+  return phone.replace('@c.us', '').replace('@s.whatsapp.net', '') + '@s.whatsapp.net';
 }
 
 export function formatPhone(chatId) {
-  return '+' + chatId.replace('@c.us', '').replace('@s.whatsapp.net', '');
+  return '+' + chatId.replace(/@.*/, '');
 }
 
 export async function sendMessage(to, body, media) {
-  const chatId = toChatId(to);
+  if (!_sock) throw new Error('WhatsApp לא מחובר');
+  const jid = toChatId(to);
   if (media) {
-    await client.sendMessage(chatId, media, { caption: body });
-  } else {
-    await client.sendMessage(chatId, body);
+    try {
+      await _sock.sendMessage(jid, { image: Buffer.from(media.data, 'base64'), caption: body || '' });
+      return;
+    } catch { /* fallthrough */ }
   }
+  await _sock.sendMessage(jid, { text: body });
 }

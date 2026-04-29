@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import qrcode from 'qrcode-terminal';
 import QRCode from 'qrcode';
 import { client, sendMessage, formatPhone } from './src/whatsapp.js';
 import { processMessage } from './src/agent.js';
@@ -41,9 +40,9 @@ if (missing.length) {
   process.exit(1);
 }
 
-const OWNER      = `${process.env.OWNER_NUMBER}@c.us`;
+const OWNER      = `${process.env.OWNER_NUMBER}@s.whatsapp.net`;
 const BOT_START  = Math.floor(Date.now() / 1000);
-const ADMIN = process.env.ADMIN_NUMBER ? `${process.env.ADMIN_NUMBER}@c.us` : null;
+const ADMIN = process.env.ADMIN_NUMBER ? `${process.env.ADMIN_NUMBER}@s.whatsapp.net` : null;
 
 function isOwnerOrAdmin(from) {
   return from === OWNER || (ADMIN && from === ADMIN);
@@ -89,8 +88,7 @@ app.listen(PORT, () => console.log(`🌐 שרת HTTP רץ על פורט ${PORT}`
 // ── WhatsApp events ───────────────────────────────────────────────────────────
 client.on('qr', (qr) => {
   latestQR = qr;
-  console.log('\nסרוק את הקוד הזה עם הוואטסאפ שלך:\n');
-  qrcode.generate(qr, { small: true });
+  console.log('\n🔗 סרוק QR מ: /qr\n');
 });
 
 client.on('ready', () => {
@@ -123,16 +121,8 @@ function dedup(msg, fn) {
   fn(msg);
 }
 
-client.on('message',        (msg) => {
-  console.log(`[message] from=${msg.from} fromMe=${msg.fromMe} type=${msg.type}`);
-  dedup(msg, handleMsg);
-});
-client.on('message_create', (msg) => {
-  console.log(`[message_create] from=${msg.from} to=${msg.to} fromMe=${msg.fromMe} type=${msg.type}`);
-  if (msg.fromMe) {
-    const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
-    if (msg.to !== selfId) return;
-  }
+client.on('message', (msg) => {
+  console.log(`📨 msg from=${msg.from} type=${msg.type}`);
   dedup(msg, handleMsg);
 });
 
@@ -149,7 +139,8 @@ async function handleMsg(msg) {
   const body = (msg.body || '').trim();
   console.log(`📝 גוף ההודעה: "${body}"`);
 
-  if (!isOwnerOrAdmin(from) && isBlocked(from)) { console.log('🚫 מספר חסום'); return; }
+  const phoneNum = from.replace(/@.*/, '');
+  if (!isOwnerOrAdmin(from) && isBlocked(phoneNum)) { console.log('🚫 מספר חסום'); return; }
 
   try {
     if (isOwnerOrAdmin(from)) {
