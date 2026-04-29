@@ -77,7 +77,10 @@ app.get('/qr', async (req, res) => {
   res.send(`<html><body style="background:#000;display:flex;align-items:center;justify-content:center;height:100vh"><img src="${img}" style="width:300px"/></body></html>`);
 });
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/health', async (req, res) => {
+  const state = await client.getState().catch(() => 'UNKNOWN');
+  res.json({ ok: true, whatsapp: state });
+});
 app.get('/messages', (req, res) => res.json(recentMessages));
 
 const PORT = process.env.PORT || 3000;
@@ -106,8 +109,9 @@ client.on('ready', () => {
   }, 5 * 60 * 1000);
 });
 
-client.on('disconnected', (reason) => {
-  console.warn('⚠️ הבוט התנתק:', reason);
+client.on('disconnected', async (reason) => {
+  console.warn('⚠️ הבוט התנתק:', reason, '— מנסה להתחבר מחדש...');
+  setTimeout(() => client.initialize(), 5000);
 });
 
 const handled = new Set();
