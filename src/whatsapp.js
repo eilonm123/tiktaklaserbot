@@ -1,10 +1,25 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'events';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import { execSync } from 'child_process';
 import pino from 'pino';
 
 const AUTH_DIR = join(process.cwd(), '.wwebjs_auth', 'baileys_auth');
+
+// Restore auth from env var (for cloud deployments)
+if (process.env.BAILEYS_AUTH_B64 && !existsSync(join(AUTH_DIR, 'creds.json'))) {
+  try {
+    mkdirSync(AUTH_DIR, { recursive: true });
+    const tarPath = join(process.cwd(), '_baileys_restore.tar.gz');
+    writeFileSync(tarPath, Buffer.from(process.env.BAILEYS_AUTH_B64, 'base64'));
+    execSync(`tar -xzf ${tarPath} -C ${process.cwd()}`);
+    console.log('✅ סשן WhatsApp שוחזר מ-env var');
+  } catch (e) {
+    console.warn('⚠️ לא הצלחתי לשחזר סשן:', e.message);
+  }
+}
 
 const _emitter = new EventEmitter();
 let _sock = null;
