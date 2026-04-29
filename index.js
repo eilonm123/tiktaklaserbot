@@ -109,15 +109,17 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('message', async (msg) => {
-  if (msg.timestamp && msg.timestamp < BOT_START) return; // הודעות ישנות
-  if (msg.from.endsWith('@g.us')) return;        // קבוצות
-  if (msg.from === 'status@broadcast') return;   // סטטוסים
-  if (msg.from.endsWith('@newsletter')) return;  // ניוזלטרים
+  console.log(`📨 הודעה נכנסת: from=${msg.from} type=${msg.type} ts=${msg.timestamp} BOT_START=${BOT_START}`);
+  if (msg.timestamp && msg.timestamp < BOT_START) { console.log('⏭️ הודעה ישנה — מדולגת'); return; }
+  if (msg.from.endsWith('@g.us')) { console.log('⏭️ קבוצה — מדולגת'); return; }
+  if (msg.from === 'status@broadcast') return;
+  if (msg.from.endsWith('@newsletter')) return;
 
   const from = msg.from;
   const body = (msg.body || '').trim();
+  console.log(`📝 גוף ההודעה: "${body}"`);
 
-  if (!isOwnerOrAdmin(from) && isBlocked(from)) return;
+  if (!isOwnerOrAdmin(from) && isBlocked(from)) { console.log('🚫 מספר חסום'); return; }
 
   try {
     if (isOwnerOrAdmin(from)) {
@@ -148,6 +150,7 @@ client.on('message', async (msg) => {
         await sendMessage(from, 'שלחת הרבה הודעות בזמן קצר 🙏 אנא המתן דקה ונסה שוב.');
         return;
       }
+      console.log(`🤖 מעביר ל-handleCustomerMessage`);
       await handleCustomerMessage(from, body);
     }
   } catch (err) {
