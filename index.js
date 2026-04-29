@@ -119,8 +119,12 @@ function dedup(msg, fn) {
   fn(msg);
 }
 
-client.on('message',        (msg) => dedup(msg, handleMsg));
+client.on('message',        (msg) => {
+  console.log(`[message] from=${msg.from} fromMe=${msg.fromMe} type=${msg.type}`);
+  dedup(msg, handleMsg);
+});
 client.on('message_create', (msg) => {
+  console.log(`[message_create] from=${msg.from} to=${msg.to} fromMe=${msg.fromMe} type=${msg.type}`);
   if (msg.fromMe) {
     const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
     if (msg.to !== selfId) return;
