@@ -110,12 +110,22 @@ client.on('disconnected', (reason) => {
   console.warn('⚠️ הבוט התנתק:', reason);
 });
 
-client.on('message_create', async (msg) => {
+const handled = new Set();
+function dedup(msg, fn) {
+  const key = msg.id?._serialized || `${msg.from}${msg.timestamp}`;
+  if (handled.has(key)) return;
+  handled.add(key);
+  setTimeout(() => handled.delete(key), 60_000);
+  fn(msg);
+}
+
+client.on('message',        (msg) => dedup(msg, handleMsg));
+client.on('message_create', (msg) => {
   if (msg.fromMe) {
     const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
     if (msg.to !== selfId) return;
   }
-  await handleMsg(msg);
+  dedup(msg, handleMsg);
 });
 
 async function handleMsg(msg) {
