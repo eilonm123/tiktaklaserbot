@@ -107,9 +107,8 @@ client.on('ready', () => {
   }, 5 * 60 * 1000);
 });
 
-client.on('disconnected', async (reason) => {
+client.on('disconnected', (reason) => {
   console.warn('⚠️ הבוט התנתק:', reason, '— מנסה להתחבר מחדש...');
-  setTimeout(() => client.initialize(), 5000);
 });
 
 const handled = new Set();
