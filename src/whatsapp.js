@@ -116,10 +116,6 @@ export function formatPhone(chatId) {
 export async function sendMessage(to, body, media) {
   if (!_sock) throw new Error('WhatsApp לא מחובר');
   const jid = toChatId(to);
-  if (_ownPhone && jid === `${_ownPhone}@s.whatsapp.net`) {
-    console.warn('⚠️ מונע שליחה לעצמי:', jid);
-    return;
-  }
   if (media) {
     try {
       await _sock.sendMessage(jid, { image: Buffer.from(media.data, 'base64'), caption: body || '' });
