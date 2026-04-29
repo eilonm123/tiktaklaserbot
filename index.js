@@ -185,6 +185,8 @@ async function handleMsg(msg) {
 
 // ── Owner commands ────────────────────────────────────────────────────────────
 async function handleOwnerCommand(body) {
+  console.log(`👑 פקודת בעלים: "${body.slice(0, 60)}"`);
+
   const approveMatch = body.match(/^אישור\s+(.+)$/i);
   const rejectMatch  = body.match(/^דחייה\s+(.+)$/i);
   const answerMatch  = body.match(/^תשובה\s+(\S+)\s+([\s\S]+)$/i);

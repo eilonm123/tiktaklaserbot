@@ -24,6 +24,7 @@ if (process.env.BAILEYS_AUTH_B64 && !existsSync(join(AUTH_DIR, 'creds.json'))) {
 const _emitter = new EventEmitter();
 let _sock = null;
 let _ownPhone = null;
+let _ownLid = null;
 
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -52,7 +53,8 @@ async function connect() {
 
     if (connection === 'open') {
       _ownPhone = _sock.user?.id?.split(':')[0].split('@')[0];
-      console.log('📱 bot own phone:', _ownPhone);
+      _ownLid   = _sock.user?.lid?.split(':')[0].split('@')[0] || null;
+      console.log('📱 bot own phone:', _ownPhone, '| lid:', _ownLid);
       _emitter.emit('ready');
     }
   });
@@ -62,9 +64,10 @@ async function connect() {
     for (const raw of messages) {
       if (!raw.message) continue;
       if (raw.key.fromMe) {
-        // allow only self-chat (admin messaging themselves to send commands)
-        const ownJid = _ownPhone ? `${_ownPhone}@s.whatsapp.net` : null;
-        if (!ownJid || raw.key.remoteJid !== ownJid) continue;
+        const remoteJid = raw.key.remoteJid;
+        const isSelfPhone = _ownPhone && remoteJid === `${_ownPhone}@s.whatsapp.net`;
+        const isSelfLid   = _ownLid   && remoteJid === `${_ownLid}@lid`;
+        if (!isSelfPhone && !isSelfLid) continue;
       }
       _emitter.emit('message', _adapt(raw));
     }
