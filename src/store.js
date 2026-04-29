@@ -3,7 +3,9 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STORE_PATH = join(__dirname, '..', 'data', 'store.json');
+// בענן — נשמור בתוך ה-Volume של WhatsApp כדי לא לאבד נתונים
+const STORE_PATH = process.env.STORE_PATH ||
+  join(__dirname, '..', '.wwebjs_auth', 'botdata', 'store.json');
 
 mkdirSync(dirname(STORE_PATH), { recursive: true });
 
