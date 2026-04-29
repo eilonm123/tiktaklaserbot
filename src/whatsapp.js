@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { EventEmitter } from 'events';
 import { join } from 'path';
@@ -8,11 +8,14 @@ const AUTH_DIR = join(process.cwd(), '.wwebjs_auth', 'baileys_auth');
 
 const _emitter = new EventEmitter();
 let _sock = null;
+let _ownPhone = null;
 
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { version } = await fetchLatestBaileysVersion();
 
   _sock = makeWASocket({
+    version,
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
@@ -25,12 +28,18 @@ async function connect() {
     if (qr) _emitter.emit('qr', qr);
 
     if (connection === 'close') {
-      const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      _emitter.emit('disconnected', lastDisconnect?.error?.message || 'unknown');
+      const err  = lastDisconnect?.error;
+      const code = new Boom(err)?.output?.statusCode;
+      console.error('🔌 disconnect code:', code, 'error:', err?.message, err?.output?.payload);
+      _emitter.emit('disconnected', err?.message || 'unknown');
       if (code !== DisconnectReason.loggedOut) setTimeout(connect, 5000);
     }
 
-    if (connection === 'open') _emitter.emit('ready');
+    if (connection === 'open') {
+      _ownPhone = _sock.user?.id?.split(':')[0].split('@')[0];
+      console.log('📱 bot own phone:', _ownPhone);
+      _emitter.emit('ready');
+    }
   });
 
   _sock.ev.on('messages.upsert', ({ messages, type }) => {
@@ -83,17 +92,22 @@ export const client = {
 };
 
 export function toChatId(phone) {
-  if (phone.includes('@g.us')) return phone;
+  if (phone.includes('@g.us') || phone.includes('@lid')) return phone;
   return phone.replace('@c.us', '').replace('@s.whatsapp.net', '') + '@s.whatsapp.net';
 }
 
 export function formatPhone(chatId) {
+  if (chatId.includes('@lid')) return chatId.replace(/@.*/, '');
   return '+' + chatId.replace(/@.*/, '');
 }
 
 export async function sendMessage(to, body, media) {
   if (!_sock) throw new Error('WhatsApp לא מחובר');
   const jid = toChatId(to);
+  if (_ownPhone && jid === `${_ownPhone}@s.whatsapp.net`) {
+    console.warn('⚠️ מונע שליחה לעצמי:', jid);
+    return;
+  }
   if (media) {
     try {
       await _sock.sendMessage(jid, { image: Buffer.from(media.data, 'base64'), caption: body || '' });
