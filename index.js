@@ -108,7 +108,18 @@ client.on('disconnected', (reason) => {
   console.warn('⚠️ הבוט התנתק:', reason);
 });
 
+client.on('message_create', async (msg) => {
+  if (!msg.fromMe) return;
+  const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
+  if (msg.to !== selfId) return;
+  await handleMsg(msg);
+});
+
 client.on('message', async (msg) => {
+  await handleMsg(msg);
+});
+
+async function handleMsg(msg) {
   console.log(`📨 הודעה נכנסת: from=${msg.from} type=${msg.type} ts=${msg.timestamp} BOT_START=${BOT_START}`);
   if (msg.timestamp && msg.timestamp < BOT_START) { console.log('⏭️ הודעה ישנה — מדולגת'); return; }
   if (msg.from.endsWith('@g.us')) { console.log('⏭️ קבוצה — מדולגת'); return; }
@@ -156,7 +167,7 @@ client.on('message', async (msg) => {
   } catch (err) {
     console.error('שגיאה בטיפול בהודעה:', err);
   }
-});
+}
 
 // ── Owner commands ────────────────────────────────────────────────────────────
 async function handleOwnerCommand(body) {
