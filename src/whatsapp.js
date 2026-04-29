@@ -40,6 +40,18 @@ async function connect() {
 
   _sock.ev.on('creds.update', saveCreds);
 
+  // learn own LID from contacts (WhatsApp privacy mode maps phone→LID)
+  _sock.ev.on('contacts.upsert', (contacts) => {
+    if (_ownLid || !_ownPhone) return;
+    for (const c of contacts) {
+      const phone = (c.id || '').split(':')[0].split('@')[0];
+      if (phone === _ownPhone && c.lid) {
+        _ownLid = c.lid.split(':')[0].split('@')[0];
+        console.log('📱 נלמד LID מcontacts:', _ownLid);
+      }
+    }
+  });
+
   _sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
     if (qr) _emitter.emit('qr', qr);
 
@@ -68,6 +80,17 @@ async function connect() {
         const isSelfPhone = _ownPhone && remoteJid === `${_ownPhone}@s.whatsapp.net`;
         const isSelfLid   = _ownLid   && remoteJid === `${_ownLid}@lid`;
         if (!isSelfPhone && !isSelfLid) continue;
+        // learn own LID from first self-chat if not yet known
+        if (!_ownLid && remoteJid.endsWith('@lid')) _ownLid = remoteJid.split('@')[0];
+      } else {
+        // learn own LID from incoming copy of self-chat (fromMe=false, participant=own)
+        if (raw.key.remoteJid.endsWith('@lid') && !_ownLid) {
+          const participant = raw.participant || raw.key.participant;
+          if (participant && participant.replace(/:.*/, '').split('@')[0] === _ownPhone) {
+            _ownLid = raw.key.remoteJid.split('@')[0];
+            console.log('📱 נלמד LID:', _ownLid);
+          }
+        }
       }
       _emitter.emit('message', _adapt(raw));
     }
@@ -109,6 +132,8 @@ export const client = {
   initialize: connect,
   getState:   async () => _sock ? 'CONNECTED' : 'DISCONNECTED',
 };
+
+export function getOwnLid() { return _ownLid; }
 
 export function toChatId(phone) {
   if (phone.includes('@g.us') || phone.includes('@lid')) return phone;

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import QRCode from 'qrcode';
-import { client, sendMessage, formatPhone } from './src/whatsapp.js';
+import { client, sendMessage, formatPhone, getOwnLid } from './src/whatsapp.js';
 import { processMessage } from './src/agent.js';
 import {
   getHistory,
@@ -45,7 +45,10 @@ const BOT_START  = Math.floor(Date.now() / 1000);
 const ADMIN = process.env.ADMIN_NUMBER ? `${process.env.ADMIN_NUMBER}@s.whatsapp.net` : null;
 
 function isOwnerOrAdmin(from) {
-  return from === OWNER || (ADMIN && from === ADMIN);
+  if (from === OWNER || (ADMIN && from === ADMIN)) return true;
+  const lid = getOwnLid();
+  if (lid && from === `${lid}@lid`) return true;
+  return false;
 }
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
