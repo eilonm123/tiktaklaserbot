@@ -111,13 +111,10 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('message_create', async (msg) => {
-  if (!msg.fromMe) return;
-  const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
-  if (msg.to !== selfId) return;
-  await handleMsg(msg);
-});
-
-client.on('message', async (msg) => {
+  if (msg.fromMe) {
+    const selfId = `${process.env.ADMIN_NUMBER}@c.us`;
+    if (msg.to !== selfId) return;
+  }
   await handleMsg(msg);
 });
 
