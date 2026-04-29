@@ -4,6 +4,7 @@ const { Client, LocalAuth } = pkg;
 export const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -11,6 +12,7 @@ export const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
+      '--single-process',
       '--disable-gpu',
     ],
   },

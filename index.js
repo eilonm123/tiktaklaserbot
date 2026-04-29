@@ -1,5 +1,7 @@
 import 'dotenv/config';
+import express from 'express';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import { client, sendMessage, formatPhone } from './src/whatsapp.js';
 import { processMessage } from './src/agent.js';
 import {
@@ -64,8 +66,24 @@ function isRateLimited(phone) {
   return false;
 }
 
+// ── HTTP server (QR endpoint) ─────────────────────────────────────────────────
+const app = express();
+let latestQR = null;
+
+app.get('/qr', async (req, res) => {
+  if (!latestQR) return res.send('<h2>QR עוד לא מוכן — רענן עוד שנייה</h2>');
+  const img = await QRCode.toDataURL(latestQR);
+  res.send(`<html><body style="background:#000;display:flex;align-items:center;justify-content:center;height:100vh"><img src="${img}" style="width:300px"/></body></html>`);
+});
+
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🌐 שרת HTTP רץ על פורט ${PORT}`));
+
 // ── WhatsApp events ───────────────────────────────────────────────────────────
 client.on('qr', (qr) => {
+  latestQR = qr;
   console.log('\nסרוק את הקוד הזה עם הוואטסאפ שלך:\n');
   qrcode.generate(qr, { small: true });
 });
