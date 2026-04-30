@@ -55,6 +55,7 @@ if (missing.length) {
 
 const OWNER      = `${process.env.OWNER_NUMBER}@s.whatsapp.net`;
 const BOT_START  = Math.floor(Date.now() / 1000);
+let BOT_ACTIVE   = true;
 const ADMIN = process.env.ADMIN_NUMBER ? `${process.env.ADMIN_NUMBER}@s.whatsapp.net` : null;
 const ADMIN_LID_JID  = process.env.ADMIN_LID  ? `${process.env.ADMIN_LID}@lid`  : null;
 const OWNER_LID_JID  = process.env.OWNER_LID  ? `${process.env.OWNER_LID}@lid`  : null;
@@ -116,7 +117,7 @@ client.on('ready', () => {
   console.log('✅ הבוט מחובר לוואטסאפ ומוכן לפעולה!');
   if (!_startupNotified) {
     _startupNotified = true;
-    sendMessage(OWNER, `🚀 הבוט עלה!\n\nפקודות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nבטל תור <שם> – ביטול מאושר + מחיקה מיומן\nאשר ביטול / דחה ביטול <שם>\nביטולים – בקשות ביטול ממתינות\nמחק <שם> – מחיקת בקשה\nמחק ממתינות – מחיקת כל הממתינות\nתשובה <טלפון> <טקסט> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nהשתק <טלפון> – הבוט לא יענה (זמני)\nהמשך <טלפון> – הפעל בוט מחדש\nהסר מבוט <טלפון> – הבוט ידלג\nהוסף לבוט <טלפון> – החזר לבוט\nחסום/שחרר <טלפון>\nרשימה – ממתינים לאישור\nביטולים – בקשות ביטול\nתורים היום\nסטטיסטיקה\nשלח לכולם <הודעה>\nלמד: <עובדה> – לימד את הבוט\nשכח: <עובדה> – מחק עובדה\nידע – מה הבוט יודע\nעזרה – רשימת פקודות`).catch(() => {});
+    sendMessage(OWNER, `🚀 הבוט עלה!\n\nפקודות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nבטל תור <שם> – ביטול מאושר + מחיקה מיומן\nאשר ביטול / דחה ביטול <שם>\nביטולים – בקשות ביטול ממתינות\nמחק <שם> – מחיקת בקשה\nמחק ממתינות – מחיקת כל הממתינות\nתשובה <טלפון> <טקסט> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nהשתק <טלפון> – הבוט לא יענה (זמני)\nהמשך <טלפון> – הפעל בוט מחדש\nהסר מבוט <טלפון> – הבוט ידלג\nהוסף לבוט <טלפון> – החזר לבוט\nחסום/שחרר <טלפון>\nרשימה – ממתינים לאישור\nביטולים – בקשות ביטול\nתורים היום\nסטטיסטיקה\nשלח לכולם <הודעה>\nלמד: <עובדה> – לימד את הבוט\nשכח: <עובדה> – מחק עובדה\nידע – מה הבוט יודע\nכיבוי / הדלקה – כיבוי והדלקת הבוט\nעזרה – רשימת פקודות`).catch(() => {});
   }
   checkPostTreatments();
   checkReminders();
@@ -196,6 +197,7 @@ async function handleMsg(msg) {
     }
 
     if (body) {
+      if (!BOT_ACTIVE) { console.log('🔴 הבוט כבוי — מדלג'); return; }
       if (isRateLimited(from)) {
         await sendMessage(from, 'שלחת הרבה הודעות בזמן קצר 🙏 אנא המתן דקה ונסה שוב.');
         return;
@@ -210,6 +212,7 @@ async function handleMsg(msg) {
 
 // ── Owner commands ────────────────────────────────────────────────────────────
 async function handleOwnerCommand(body, replyTo = OWNER) {
+  if (!body) return;
   console.log(`👑 פקודת בעלים: "${body.slice(0, 60)}"`);
 
   const approveMatch = body.match(/^אישור\s+(.+)$/i);
@@ -236,6 +239,18 @@ async function handleOwnerCommand(body, replyTo = OWNER) {
   const cancelListMatch    = /^ביטולים$/.test(body);
   const statsMatch   = /^סטטיסטיקה$/.test(body);
   const todayMatch   = /^תורים היום$/.test(body);
+
+  if (/^כיבוי$/.test(body)) {
+    BOT_ACTIVE = false;
+    await sendMessage(replyTo, '🔴 הבוט כובה — לא יענה ללקוחות עד שתדליק אותו');
+    return;
+  }
+
+  if (/^הדלקה$/.test(body)) {
+    BOT_ACTIVE = true;
+    await sendMessage(replyTo, '🟢 הבוט הודלק — עונה ללקוחות שוב');
+    return;
+  }
 
   if (answerMatch) {
     const customerPhone = answerMatch[1].trim();
@@ -496,7 +511,9 @@ async function handleOwnerCommand(body, replyTo = OWNER) {
       `📢 *שלח לכולם <הודעה>*\n` +
       `🧠 *למד: <עובדה>* – לימד את הבוט\n` +
       `🗑️ *שכח: <עובדה>* – מחק עובדה\n` +
-      `📚 *ידע* – הצג מה הבוט יודע`
+      `📚 *ידע* – הצג מה הבוט יודע\n` +
+      `🔴 *כיבוי* – הפסק לענות ללקוחות\n` +
+      `🟢 *הדלקה* – חזור לענות ללקוחות`
     );
     return;
   }

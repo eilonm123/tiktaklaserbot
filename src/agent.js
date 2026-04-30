@@ -213,7 +213,7 @@ export async function processMessage(phone, userMessage, history) {
     { role: 'user', content: userMessage },
   ];
 
-  const MODELS = ['openai/gpt-4o-mini', 'openai/gpt-oss-120b:free'];
+  const MODELS = ['openai/gpt-oss-120b:free', 'openai/gpt-4o-mini'];
   let response;
   for (const model of MODELS) {
     try {
@@ -375,7 +375,7 @@ ${knowledge.length ? `\nעובדות על הקליניקה:\n${knowledge.map(f =
   history.push({ role: 'user', content: message });
   if (history.length > 10) history.splice(0, history.length - 10);
 
-  const MODELS = ['openai/gpt-4o-mini', 'openai/gpt-oss-120b:free'];
+  const MODELS = ['openai/gpt-oss-120b:free', 'openai/gpt-4o-mini'];
   for (const model of MODELS) {
     try {
       const res = await openai.chat.completions.create({

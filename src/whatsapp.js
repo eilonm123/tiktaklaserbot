@@ -99,8 +99,9 @@ async function connect() {
               id:        { _serialized: raw.key.id },
             });
           }
-          continue;
         }
+        // דלג על כל הודעות fromMe (כולל self-chat) כדי למנוע לופ
+        continue;
       }
       _emitter.emit('message', _adapt(raw));
     }
