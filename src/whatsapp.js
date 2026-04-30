@@ -84,23 +84,51 @@ async function connect() {
         }
         const isSelfPhone = _ownPhone && remoteJid === `${_ownPhone}@s.whatsapp.net`;
         const isSelfLid   = _ownLid   && remoteJid === `${_ownLid}@lid`;
-        if (!isSelfPhone && !isSelfLid) {
-          // פקודות מנהל שנשלחות ישירות בצ'אט של לקוח
-          const body = _body(raw)?.trim();
-          const CHAT_CMDS = /^(הוסף לבוט|הסר מבוט|השתק|המשך)$/i;
-          if (body && CHAT_CMDS.test(body) && _ownPhone) {
-            _emitter.emit('message', {
-              from:      `${_ownPhone}@s.whatsapp.net`,
-              fromMe:    true,
-              body:      `${body} ${remoteJid}`,
-              type:      'chat',
-              timestamp: Number(raw.messageTimestamp),
-              hasMedia:  false,
-              id:        { _serialized: raw.key.id },
-            });
+        const body = _body(raw)?.trim();
+        // פקודות קונטקסטואליות — מוסיפים את ה-JID של הלקוח אוטומטית
+        const CONTEXTUAL_CMDS = /^(הוסף לבוט|הסר מבוט|השתק|המשך)$/i;
+        // פקודות מנהל עצמאיות — הפרמטר כבר בגוף ההודעה
+        const STANDALONE_CMDS = /^(אישור|דחייה|תשובה|שלח לכולם|סיים|נקה|חסום|שחרר|בטל תור|למד:|שכח:|ידע|אשר ביטול|דחה ביטול|מחק|רשימה|ביטולים|סטטיסטיקה|תורים היום|כיבוי|הדלקה|עזרה|פקודות|help|\?)/i;
+        if (body && _ownPhone) {
+          if (isSelfPhone || isSelfLid) {
+            // צ'אט עצמי — רק פקודות מנהל (לא הודעות שהבוט עצמו שלח)
+            if (STANDALONE_CMDS.test(body)) {
+              _emitter.emit('message', {
+                from:      `${_ownPhone}@s.whatsapp.net`,
+                fromMe:    true,
+                body,
+                type:      'chat',
+                timestamp: Number(raw.messageTimestamp),
+                hasMedia:  false,
+                id:        { _serialized: raw.key.id },
+              });
+            }
+          } else {
+            // צ'אט לקוח — פקודות קונטקסטואליות עם JID, או פקודות עצמאיות
+            if (CONTEXTUAL_CMDS.test(body)) {
+              _emitter.emit('message', {
+                from:      `${_ownPhone}@s.whatsapp.net`,
+                fromMe:    true,
+                body:      `${body} ${remoteJid}`,
+                type:      'chat',
+                timestamp: Number(raw.messageTimestamp),
+                hasMedia:  false,
+                id:        { _serialized: raw.key.id },
+              });
+            } else if (STANDALONE_CMDS.test(body)) {
+              _emitter.emit('message', {
+                from:      `${_ownPhone}@s.whatsapp.net`,
+                fromMe:    true,
+                body,
+                type:      'chat',
+                timestamp: Number(raw.messageTimestamp),
+                hasMedia:  false,
+                id:        { _serialized: raw.key.id },
+              });
+            }
           }
         }
-        // דלג על כל הודעות fromMe (כולל self-chat) כדי למנוע לופ
+        // דלג על כל הודעות fromMe כדי למנוע לופ
         continue;
       }
       _emitter.emit('message', _adapt(raw));
