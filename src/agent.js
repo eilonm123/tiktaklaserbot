@@ -1,14 +1,27 @@
-import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import { saveAppointment, getNextAppointmentByPhone, cancelCustomerAppointment, requestCancellation, getPendingAppointments, getTodayAppointments, getStatistics, getKnowledge } from './store.js';
 import { sendMessage, formatPhone } from './whatsapp.js';
 import { ownerApprovalRequest } from './messages.js';
 import { checkAvailability } from './calendar.js';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+async function chatCompletion(model, messages, { tools, tool_choice, max_tokens = 1024, timeout = 60_000 } = {}) {
+  const body = { model, messages, max_tokens };
+  if (tools) { body.tools = tools; body.tool_choice = tool_choice || 'auto'; }
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${text}`);
+  }
+  return res.json();
+}
 
 const MAX_HISTORY_MESSAGES = 20;
 
@@ -217,13 +230,12 @@ export async function processMessage(phone, userMessage, history) {
   let response;
   for (const model of MODELS) {
     try {
-      response = await openai.chat.completions.create({
-        model,
-        messages,
+      response = await chatCompletion(model, messages, {
         tools: TOOLS,
         tool_choice: 'auto',
         max_tokens: 1024,
-      }, { timeout: 30_000 });
+        timeout: 60_000,
+      });
       break;
     } catch (err) {
       console.error(`OpenRouter error (${model}):`, err.message);
@@ -378,11 +390,10 @@ ${knowledge.length ? `\nעובדות על הקליניקה:\n${knowledge.map(f =
   const MODELS = ['openai/gpt-oss-120b:free', 'openai/gpt-4o-mini'];
   for (const model of MODELS) {
     try {
-      const res = await openai.chat.completions.create({
-        model,
-        messages: [{ role: 'system', content: systemPrompt }, ...history],
+      const res = await chatCompletion(model, [{ role: 'system', content: systemPrompt }, ...history], {
         max_tokens: 512,
-      }, { timeout: 20_000 });
+        timeout: 40_000,
+      });
       const reply = res.choices?.[0]?.message?.content || '';
       if (reply) {
         history.push({ role: 'assistant', content: reply });
