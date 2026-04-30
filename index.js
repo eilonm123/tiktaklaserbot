@@ -102,22 +102,6 @@ app.get('/health', async (req, res) => {
   res.json({ ok: true, whatsapp: state });
 });
 
-app.get('/test-ai', async (req, res) => {
-  try {
-    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: 'openai/gpt-oss-120b:free', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
-    });
-    const json = await r.json();
-    res.json({ status: r.status, body: json });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
 app.get('/messages', (req, res) => res.json(recentMessages));
 
 const PORT = process.env.PORT || 3000;
@@ -201,16 +185,10 @@ async function handleMsg(msg) {
       return;
     }
 
-    // תמונה/וידאו – העבר לבעלים
-    if (msg.hasMedia) {
-      try {
-        const media = await msg.downloadMedia();
-        if (media) { await handleImageMessage(from, media); return; }
-      } catch (err) {
-        console.error('שגיאה בהורדת מדיה:', err.message);
-        await sendMessage(from, 'לא הצלחתי לקבל את הקובץ 😔 אנא נסה שוב');
-        return;
-      }
+    // תמונה/וידאו – אם אין כיתוב, בקש טקסט; אם יש כיתוב, מעבד אותו
+    if (msg.hasMedia && !body) {
+      await sendMessage(from, 'תודה על התמונה! 📸\nאנא תאר/י בטקסט במה אני יכול לעזור 😊');
+      return;
     }
 
     if (body) {
