@@ -44,6 +44,11 @@ export async function createCalendarEvent(appt) {
   return res.data;
 }
 
+export async function deleteCalendarEvent(eventId) {
+  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  await calendar.events.delete({ calendarId, eventId });
+}
+
 export async function checkAvailability(date, time) {
   try {
     const [day, month, year] = date.split('/');

@@ -70,15 +70,37 @@ export function updateAppointmentStatus(id, status) {
   if (state.appointments[id]) { state.appointments[id].status = status; save(state); }
 }
 
-export function getAppointmentByName(name) {
+export function setCalendarEventId(id, calendarEventId) {
+  const state = load();
+  if (state.appointments[id]) { state.appointments[id].calendarEventId = calendarEventId; save(state); }
+}
+
+export function getAppointmentByName(name, statusFilter = null) {
   const nameLower = name.trim().toLowerCase();
   return Object.values(load().appointments)
-    .filter((a) => a.status === 'pending' && a.name.toLowerCase().includes(nameLower))
+    .filter((a) => {
+      if (statusFilter && a.status !== statusFilter) return false;
+      return a.name.toLowerCase().includes(nameLower);
+    })
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
 }
 
 export function getPendingAppointments() {
   return Object.values(load().appointments).filter((a) => a.status === 'pending');
+}
+
+export function deleteAppointment(id) {
+  const state = load();
+  delete state.appointments[id];
+  save(state);
+}
+
+export function deleteAllPendingAppointments() {
+  const state = load();
+  Object.keys(state.appointments).forEach((id) => {
+    if (state.appointments[id].status === 'pending') delete state.appointments[id];
+  });
+  save(state);
 }
 
 export function getTodayAppointments() {
@@ -90,15 +112,30 @@ export function getTodayAppointments() {
     .sort((a, b) => a.time.localeCompare(b.time));
 }
 
-export function cancelCustomerAppointment(phone) {
+export function requestCancellation(phone) {
   const state = load();
   const appt  = Object.values(state.appointments)
     .filter((a) => a.phone === phone && (a.status === 'pending' || a.status === 'approved'))
     .sort((a, b) => apptToMs(b) - apptToMs(a))[0];
   if (!appt) return null;
+  state.appointments[appt.id].status = 'cancellation_requested';
+  save(state);
+  return appt;
+}
+
+export function cancelCustomerAppointment(phone) {
+  const state = load();
+  const appt  = Object.values(state.appointments)
+    .filter((a) => a.phone === phone && (a.status === 'cancellation_requested' || a.status === 'pending' || a.status === 'approved'))
+    .sort((a, b) => apptToMs(b) - apptToMs(a))[0];
+  if (!appt) return null;
   state.appointments[appt.id].status = 'cancelled';
   save(state);
   return appt;
+}
+
+export function getCancellationRequests() {
+  return Object.values(load().appointments).filter((a) => a.status === 'cancellation_requested');
 }
 
 // ── customer queries ──────────────────────────────────────────────────────────
@@ -201,3 +238,18 @@ export function getCustomersForRebookNudge() {
 export function isBlocked(phone)   { return (load().blocked || []).includes(phone); }
 export function blockPhone(phone)  { const s = load(); if (!s.blocked) s.blocked = []; if (!s.blocked.includes(phone)) s.blocked.push(phone); save(s); }
 export function unblockPhone(phone){ const s = load(); s.blocked = (s.blocked || []).filter((p) => p !== phone); save(s); }
+
+// ── muted (השתקה זמנית – הבוט לא עונה אבל לא חוסם) ──────────────────────────
+export function isMuted(phone)    { return (load().muted || []).includes(phone); }
+export function mutePhone(phone)  { const s = load(); if (!s.muted) s.muted = []; if (!s.muted.includes(phone)) s.muted.push(phone); save(s); }
+export function unmutePhone(phone){ const s = load(); s.muted = (s.muted || []).filter((p) => p !== phone); save(s); }
+
+// ── contacts (אנשי קשר פרטיים – הבוט מדלג עליהם לתמיד) ──────────────────────
+export function isContact(phone)       { return (load().contacts || []).includes(phone); }
+export function addContact(phone)      { const s = load(); if (!s.contacts) s.contacts = []; if (!s.contacts.includes(phone)) s.contacts.push(phone); save(s); }
+export function removeContact(phone)   { const s = load(); s.contacts = (s.contacts || []).filter((p) => p !== phone); save(s); }
+
+// ── knowledge (עובדות שהמנהל לימד את הבוט) ──────────────────────────────────
+export function getKnowledge()         { return load().knowledge || []; }
+export function addKnowledge(fact)     { const s = load(); if (!s.knowledge) s.knowledge = []; if (!s.knowledge.includes(fact)) s.knowledge.push(fact); save(s); }
+export function removeKnowledge(fact)  { const s = load(); s.knowledge = (s.knowledge || []).filter((f) => f !== fact); save(s); }

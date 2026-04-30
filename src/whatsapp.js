@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import pino from 'pino';
 
-const AUTH_DIR = join(process.cwd(), '.wwebjs_auth', 'baileys_auth');
+const AUTH_DIR = process.env.BAILEYS_AUTH_DIR || join(process.cwd(), '.wwebjs_auth', 'baileys_auth');
 
 // Restore auth from env var (for cloud deployments)
 if (process.env.BAILEYS_AUTH_B64 && !existsSync(join(AUTH_DIR, 'creds.json'))) {
@@ -77,19 +77,29 @@ async function connect() {
       if (!raw.message) continue;
       if (raw.key.fromMe) {
         const remoteJid = raw.key.remoteJid;
+        // learn own LID from first fromMe @lid message (self-chat sync)
+        if (!_ownLid && remoteJid.endsWith('@lid')) {
+          _ownLid = remoteJid.split('@')[0];
+          console.log('📱 נלמד LID מself-chat:', _ownLid);
+        }
         const isSelfPhone = _ownPhone && remoteJid === `${_ownPhone}@s.whatsapp.net`;
         const isSelfLid   = _ownLid   && remoteJid === `${_ownLid}@lid`;
-        if (!isSelfPhone && !isSelfLid) continue;
-        // learn own LID from first self-chat if not yet known
-        if (!_ownLid && remoteJid.endsWith('@lid')) _ownLid = remoteJid.split('@')[0];
-      } else {
-        // learn own LID from incoming copy of self-chat (fromMe=false, participant=own)
-        if (raw.key.remoteJid.endsWith('@lid') && !_ownLid) {
-          const participant = raw.participant || raw.key.participant;
-          if (participant && participant.replace(/:.*/, '').split('@')[0] === _ownPhone) {
-            _ownLid = raw.key.remoteJid.split('@')[0];
-            console.log('📱 נלמד LID:', _ownLid);
+        if (!isSelfPhone && !isSelfLid) {
+          // פקודות מנהל שנשלחות ישירות בצ'אט של לקוח
+          const body = _body(raw)?.trim();
+          const CHAT_CMDS = /^(הוסף לבוט|הסר מבוט|השתק|המשך)$/i;
+          if (body && CHAT_CMDS.test(body) && _ownPhone) {
+            _emitter.emit('message', {
+              from:      `${_ownPhone}@s.whatsapp.net`,
+              fromMe:    true,
+              body:      `${body} ${remoteJid}`,
+              type:      'chat',
+              timestamp: Number(raw.messageTimestamp),
+              hasMedia:  false,
+              id:        { _serialized: raw.key.id },
+            });
           }
+          continue;
         }
       }
       _emitter.emit('message', _adapt(raw));

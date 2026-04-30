@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import QRCode from 'qrcode';
 import { client, sendMessage, formatPhone, getOwnLid } from './src/whatsapp.js';
-import { processMessage } from './src/agent.js';
+import { processMessage, processAdminMessage } from './src/agent.js';
 import {
   getHistory,
   appendMessage,
@@ -10,10 +10,23 @@ import {
   getAppointment,
   getAppointmentByName,
   updateAppointmentStatus,
+  setCalendarEventId,
   getPendingAppointments,
+  deleteAppointment,
+  deleteAllPendingAppointments,
+  getCancellationRequests,
+  isContact,
+  addContact,
+  removeContact,
+  getKnowledge,
+  addKnowledge,
+  removeKnowledge,
   isBlocked,
   blockPhone,
   unblockPhone,
+  isMuted,
+  mutePhone,
+  unmutePhone,
   isReturningCustomer,
   markPostTreatmentSent,
   getAppointmentsDueForPostTreatment,
@@ -31,7 +44,7 @@ import {
   appointmentConfirmed, PRE_TREATMENT, POST_TREATMENT, MEDICAL_FORM,
   followUpMessage, rebookNudge, GOOGLE_REVIEW,
 } from './src/messages.js';
-import { createCalendarEvent } from './src/calendar.js';
+import { createCalendarEvent, deleteCalendarEvent } from './src/calendar.js';
 
 const REQUIRED_ENV = ['OPENROUTER_API_KEY', 'OWNER_NUMBER'];
 const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
@@ -43,9 +56,13 @@ if (missing.length) {
 const OWNER      = `${process.env.OWNER_NUMBER}@s.whatsapp.net`;
 const BOT_START  = Math.floor(Date.now() / 1000);
 const ADMIN = process.env.ADMIN_NUMBER ? `${process.env.ADMIN_NUMBER}@s.whatsapp.net` : null;
+const ADMIN_LID_JID  = process.env.ADMIN_LID  ? `${process.env.ADMIN_LID}@lid`  : null;
+const OWNER_LID_JID  = process.env.OWNER_LID  ? `${process.env.OWNER_LID}@lid`  : null;
 
 function isOwnerOrAdmin(from) {
   if (from === OWNER || (ADMIN && from === ADMIN)) return true;
+  if (ADMIN_LID_JID && from === ADMIN_LID_JID) return true;
+  if (OWNER_LID_JID && from === OWNER_LID_JID) return true;
   const lid = getOwnLid();
   if (lid && from === `${lid}@lid`) return true;
   return false;
@@ -99,7 +116,7 @@ client.on('ready', () => {
   console.log('✅ הבוט מחובר לוואטסאפ ומוכן לפעולה!');
   if (!_startupNotified) {
     _startupNotified = true;
-    sendMessage(OWNER, `🚀 הבוט עלה!\n\nפקודות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nתשובה <טלפון> <טקסט> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nחסום/שחרר <טלפון>\nרשימה – ממתינים לאישור\nתורים היום\nסטטיסטיקה\nשלח לכולם <הודעה>`).catch(() => {});
+    sendMessage(OWNER, `🚀 הבוט עלה!\n\nפקודות:\nאישור <שם> – אישור תור\nדחייה <שם> – דחיית תור\nבטל תור <שם> – ביטול מאושר + מחיקה מיומן\nאשר ביטול / דחה ביטול <שם>\nביטולים – בקשות ביטול ממתינות\nמחק <שם> – מחיקת בקשה\nמחק ממתינות – מחיקת כל הממתינות\nתשובה <טלפון> <טקסט> – ענה ללקוח\nסיים <טלפון> – הנחיות אחרי טיפול\nנקה <טלפון> – ניקוי שיחה\nהשתק <טלפון> – הבוט לא יענה (זמני)\nהמשך <טלפון> – הפעל בוט מחדש\nהסר מבוט <טלפון> – הבוט ידלג\nהוסף לבוט <טלפון> – החזר לבוט\nחסום/שחרר <טלפון>\nרשימה – ממתינים לאישור\nביטולים – בקשות ביטול\nתורים היום\nסטטיסטיקה\nשלח לכולם <הודעה>\nלמד: <עובדה> – לימד את הבוט\nשכח: <עובדה> – מחק עובדה\nידע – מה הבוט יודע\nעזרה – רשימת פקודות`).catch(() => {});
   }
   checkPostTreatments();
   checkReminders();
@@ -147,11 +164,16 @@ async function handleMsg(msg) {
   console.log(`📝 גוף ההודעה: "${body}"`);
 
   const phoneNum = from.replace(/@.*/, '');
+  if (from.endsWith('@lid') && !isOwnerOrAdmin(from)) {
+    console.log(`🆔 LID לא מוכר: ${from} — אם זו מיה, הוסף OWNER_LID=${from.split('@')[0]} ל-.env`);
+  }
   if (!isOwnerOrAdmin(from) && isBlocked(phoneNum)) { console.log('🚫 מספר חסום'); return; }
+  if (!isOwnerOrAdmin(from) && isMuted(phoneNum)) { console.log('🔇 מספר מושתק'); return; }
+  if (!isOwnerOrAdmin(from) && isContact(phoneNum)) { console.log('👤 איש קשר פרטי – מדולג'); return; }
 
   try {
     if (isOwnerOrAdmin(from)) {
-      await handleOwnerCommand(body);
+      await handleOwnerCommand(body, from);
       return;
     }
 
@@ -187,7 +209,7 @@ async function handleMsg(msg) {
 }
 
 // ── Owner commands ────────────────────────────────────────────────────────────
-async function handleOwnerCommand(body) {
+async function handleOwnerCommand(body, replyTo = OWNER) {
   console.log(`👑 פקודת בעלים: "${body.slice(0, 60)}"`);
 
   const approveMatch = body.match(/^אישור\s+(.+)$/i);
@@ -198,7 +220,20 @@ async function handleOwnerCommand(body) {
   const clearMatch   = body.match(/^נקה\s+(\S+)$/i);
   const blockMatch   = body.match(/^חסום\s+(\S+)$/i);
   const unblockMatch = body.match(/^שחרר\s+(\S+)$/i);
-  const listMatch    = /^רשימה$/.test(body);
+  const muteMatch    = body.match(/^השתק\s+(\S+)$/i);
+  const unmuteMatch  = body.match(/^המשך\s+(\S+)$/i);
+  const cancelApptMatch    = body.match(/^בטל תור\s+(.+)$/i);
+  const learnMatch         = body.match(/^למד:\s*(.+)$/i);
+  const forgetMatch        = body.match(/^שכח:\s*(.+)$/i);
+  const knowledgeListMatch = /^ידע$/.test(body);
+  const approveCancelMatch = body.match(/^אשר ביטול\s+(.+)$/i);
+  const rejectCancelMatch  = body.match(/^דחה ביטול\s+(.+)$/i);
+  const deleteApptMatch    = body.match(/^מחק\s+(.+)$/i);
+  const deleteAllMatch     = /^מחק ממתינות$/.test(body);
+  const addContactMatch    = body.match(/^הוסף לבוט\s+(\S+)$/i);
+  const removeContactMatch = body.match(/^הסר מבוט\s+(\S+)$/i);
+  const listMatch          = /^רשימה$/.test(body);
+  const cancelListMatch    = /^ביטולים$/.test(body);
   const statsMatch   = /^סטטיסטיקה$/.test(body);
   const todayMatch   = /^תורים היום$/.test(body);
 
@@ -206,14 +241,14 @@ async function handleOwnerCommand(body) {
     const customerPhone = answerMatch[1].trim();
     const answer        = answerMatch[2].trim();
     await sendMessage(customerPhone, answer);
-    await sendMessage(OWNER, `✅ התשובה נשלחה ללקוח`);
+    await sendMessage(replyTo, `✅ התשובה נשלחה ללקוח`);
     return;
   }
 
   if (approveMatch) {
     const query = approveMatch[1].trim();
-    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query);
-    if (!appt) { await sendMessage(OWNER, `❌ לא נמצאה בקשה ממתינה עבור "${query}"`); return; }
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query, 'pending');
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצאה בקשה ממתינה עבור "${query}"`); return; }
     const isReturning = isReturningCustomer(appt.phone);
     updateAppointmentStatus(appt.id, 'approved');
     const confirmMsg = appointmentConfirmed(appt.name, appt.date, appt.time);
@@ -222,25 +257,26 @@ async function handleOwnerCommand(body) {
       : `${confirmMsg}\n\n${PRE_TREATMENT}\n\n${MEDICAL_FORM}`;
     await sendMessage(appt.phone, preMsg);
     try {
-      await createCalendarEvent(appt);
-      await sendMessage(OWNER, `✅ תור אושר ונשלח ללקוח (${appt.name}) 📅 נוסף ליומן`);
+      const calEvent = await createCalendarEvent(appt);
+      if (calEvent?.id) setCalendarEventId(appt.id, calEvent.id);
+      await sendMessage(replyTo, `✅ תור אושר ונשלח ללקוח (${appt.name}) 📅 נוסף ליומן`);
     } catch (err) {
       console.error('שגיאה ביצירת אירוע ביומן:', err.message);
-      await sendMessage(OWNER, `✅ תור אושר ונשלח ללקוח (${appt.name}) ⚠️ לא ניתן להוסיף ליומן`);
+      await sendMessage(replyTo, `✅ תור אושר ונשלח ללקוח (${appt.name}) ⚠️ לא ניתן להוסיף ליומן`);
     }
     return;
   }
 
   if (rejectMatch) {
     const query = rejectMatch[1].trim();
-    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query);
-    if (!appt) { await sendMessage(OWNER, `❌ לא נמצאה בקשה ממתינה עבור "${query}"`); return; }
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query, 'pending');
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצאה בקשה ממתינה עבור "${query}"`); return; }
     updateAppointmentStatus(appt.id, 'rejected');
     await sendMessage(
       appt.phone,
       `היי ${appt.name} 😔\nלצערנו לא נוכל לקבוע את התור המבוקש.\nנשמח לתאם מועד אחר! אנא צרו איתנו קשר 💙`
     );
-    await sendMessage(OWNER, `✅ הלקוח קיבל הודעת דחייה (${appt.name})`);
+    await sendMessage(replyTo, `✅ הלקוח קיבל הודעת דחייה (${appt.name})`);
     return;
   }
 
@@ -249,51 +285,65 @@ async function handleOwnerCommand(body) {
     await sendMessage(phone, POST_TREATMENT);
     await sendMessage(phone, GOOGLE_REVIEW);
     clearHistory(phone);
-    await sendMessage(OWNER, `✅ הנחיות לאחר טיפול נשלחו ל-${formatPhone(phone)}`);
+    await sendMessage(replyTo, `✅ הנחיות לאחר טיפול נשלחו ל-${formatPhone(phone)}`);
     return;
   }
 
   if (clearMatch) {
     const phone = clearMatch[1];
     clearHistory(phone);
-    await sendMessage(OWNER, `✅ היסטוריית השיחה של ${formatPhone(phone)} נוקתה`);
+    await sendMessage(replyTo, `✅ היסטוריית השיחה של ${formatPhone(phone)} נוקתה`);
     return;
   }
 
   if (blockMatch) {
     const phone = blockMatch[1];
     blockPhone(phone);
-    await sendMessage(OWNER, `🚫 ${formatPhone(phone)} נחסם – הבוט לא יגיב לו יותר`);
+    await sendMessage(replyTo, `🚫 ${formatPhone(phone)} נחסם – הבוט לא יגיב לו יותר`);
     return;
   }
 
   if (unblockMatch) {
     const phone = unblockMatch[1];
     unblockPhone(phone);
-    await sendMessage(OWNER, `✅ ${formatPhone(phone)} שוחרר – הבוט יחזור להגיב`);
+    await sendMessage(replyTo, `✅ ${formatPhone(phone)} שוחרר – הבוט יחזור להגיב`);
+    return;
+  }
+
+  if (muteMatch) {
+    const phone = muteMatch[1];
+    mutePhone(phone);
+    await sendMessage(replyTo, `🔇 ${formatPhone(phone)} הושתק – הבוט לא יענה אבל לא חסום`);
+    return;
+  }
+
+  if (unmuteMatch) {
+    const phone = unmuteMatch[1];
+    unmutePhone(phone);
+    await sendMessage(replyTo, `🔊 ${formatPhone(phone)} הופעל מחדש – הבוט יענה שוב`);
     return;
   }
 
   if (statsMatch) {
     const s = getStatistics();
     const areas = s.topAreas.length ? s.topAreas.join(', ') : 'אין מידע עדיין';
-    await sendMessage(OWNER, `📊 סטטיסטיקה:\n\nהשבוע: ${s.week} תורים\nהחודש: ${s.month} תורים\nסה״כ: ${s.total} תורים\nממתינים לאישור: ${s.pending}\n\n🏆 טיפולים פופולריים: ${areas}`);
+    await sendMessage(replyTo, `📊 סטטיסטיקה:\n\nהשבוע: ${s.week} תורים\nהחודש: ${s.month} תורים\nסה״כ: ${s.total} תורים\nממתינים לאישור: ${s.pending}\n\n🏆 טיפולים פופולריים: ${areas}`);
     return;
   }
 
   if (todayMatch) {
     const appts = getTodayAppointments();
-    if (appts.length === 0) { await sendMessage(OWNER, '📅 אין תורים היום'); return; }
+    if (appts.length === 0) { await sendMessage(replyTo, '📅 אין תורים היום'); return; }
     const lines = appts.map((a) => `🕐 ${a.time} – ${a.name} | ${Array.isArray(a.areas) ? a.areas.join(', ') : a.areas}`);
-    await sendMessage(OWNER, `📅 תורים היום (${appts.length}):\n\n${lines.join('\n')}`);
+    await sendMessage(replyTo, `📅 תורים היום (${appts.length}):\n\n${lines.join('\n')}`);
     return;
   }
 
   if (broadcastMatch) {
     const message  = broadcastMatch[1].trim();
     const phones   = getAllCustomerPhones();
-    if (phones.length === 0) { await sendMessage(OWNER, '❌ אין לקוחות לשליחה'); return; }
-    await sendMessage(OWNER, `📤 שולח ל-${phones.length} לקוחות...`);
+    if (phones.length === 0) { await sendMessage(replyTo, '❌ אין לקוחות לשליחה'); return; }
+    await sendMessage(replyTo, `📤 שולח ל-${phones.length} לקוחות...`);
     let sent = 0;
     for (const phone of phones) {
       try {
@@ -304,25 +354,156 @@ async function handleOwnerCommand(body) {
         console.error(`שגיאה בשליחה ל-${phone}:`, err.message);
       }
     }
-    await sendMessage(OWNER, `✅ ההודעה נשלחה ל-${sent}/${phones.length} לקוחות`);
+    await sendMessage(replyTo, `✅ ההודעה נשלחה ל-${sent}/${phones.length} לקוחות`);
+    return;
+  }
+
+  if (cancelApptMatch) {
+    const query = cancelApptMatch[1].trim();
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query);
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצא תור עבור "${query}"`); return; }
+    updateAppointmentStatus(appt.id, 'cancelled');
+    if (appt.calendarEventId) {
+      try { await deleteCalendarEvent(appt.calendarEventId); } catch (e) { console.error('שגיאה במחיקת יומן:', e.message); }
+    }
+    await sendMessage(appt.phone, `היי ${appt.name} 😊\nהתור שלך ל-${appt.date} בשעה ${appt.time} בוטל ✅\nנשמח לראותך בפעם אחרת! 💙`);
+    await sendMessage(replyTo, `✅ תור ${appt.name} בוטל${appt.calendarEventId ? ' והוסר מהיומן' : ''}`);
+    return;
+  }
+
+  if (learnMatch) {
+    const fact = learnMatch[1].trim();
+    addKnowledge(fact);
+    await sendMessage(replyTo, `🧠 למדתי: "${fact}"`);
+    return;
+  }
+
+  if (forgetMatch) {
+    const fact = forgetMatch[1].trim();
+    removeKnowledge(fact);
+    await sendMessage(replyTo, `🗑️ שכחתי: "${fact}"`);
+    return;
+  }
+
+  if (knowledgeListMatch) {
+    const facts = getKnowledge();
+    if (!facts.length) { await sendMessage(replyTo, '🧠 אין עובדות שמורות עדיין'); return; }
+    await sendMessage(replyTo, `🧠 מה שהבוט יודע:\n\n${facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
+    return;
+  }
+
+  if (approveCancelMatch) {
+    const query = approveCancelMatch[1].trim();
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query, 'cancellation_requested');
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצאה בקשת ביטול עבור "${query}"`); return; }
+    updateAppointmentStatus(appt.id, 'cancelled');
+    await sendMessage(appt.phone, `היי ${appt.name} 😊\nהתור שלך ל-${appt.date} בשעה ${appt.time} בוטל בהצלחה ✅\nנשמח לראותך בפעם אחרת! 💙`);
+    await sendMessage(replyTo, `✅ ביטול התור של ${appt.name} אושר ונשלח ללקוח`);
+    return;
+  }
+
+  if (rejectCancelMatch) {
+    const query = rejectCancelMatch[1].trim();
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query, 'cancellation_requested');
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצאה בקשת ביטול עבור "${query}"`); return; }
+    updateAppointmentStatus(appt.id, 'approved');
+    await sendMessage(appt.phone, `היי ${appt.name} 😊\nבקשת הביטול שלך לא אושרה.\nהתור ל-${appt.date} בשעה ${appt.time} עדיין קיים ✅\nלשינוי מועד אנא צור קשר 💙`);
+    await sendMessage(replyTo, `✅ בקשת הביטול של ${appt.name} נדחתה, התור נשמר`);
+    return;
+  }
+
+  if (deleteAllMatch) {
+    const pending = getPendingAppointments();
+    if (pending.length === 0) { await sendMessage(replyTo, '📋 אין בקשות ממתינות למחיקה'); return; }
+    deleteAllPendingAppointments();
+    await sendMessage(replyTo, `🗑️ נמחקו ${pending.length} בקשות ממתינות`);
+    return;
+  }
+
+  if (deleteApptMatch) {
+    const query = deleteApptMatch[1].trim();
+    if (query === 'ממתינות') {
+      const pending = getPendingAppointments();
+      if (pending.length === 0) { await sendMessage(replyTo, '📋 אין בקשות ממתינות למחיקה'); return; }
+      deleteAllPendingAppointments();
+      await sendMessage(replyTo, `🗑️ נמחקו ${pending.length} בקשות ממתינות`);
+      return;
+    }
+    const appt = getAppointment(query.toUpperCase()) || getAppointmentByName(query);
+    if (!appt) { await sendMessage(replyTo, `❌ לא נמצאה בקשה עבור "${query}"`); return; }
+    deleteAppointment(appt.id);
+    await sendMessage(replyTo, `🗑️ הבקשה של ${appt.name} (${appt.date} ${appt.time}) נמחקה`);
+    return;
+  }
+
+  if (addContactMatch) {
+    const phone = addContactMatch[1];
+    removeContact(phone.replace(/@.*/, ''));
+    await sendMessage(replyTo, `✅ ${formatPhone(phone)} הוחזר לבוט – הבוט יענה שוב`);
+    return;
+  }
+
+  if (removeContactMatch) {
+    const phone = removeContactMatch[1];
+    addContact(phone.replace(/@.*/, ''));
+    await sendMessage(replyTo, `👤 ${formatPhone(phone)} הוסר מהבוט – הבוט ידלג עליו`);
+    return;
+  }
+
+  if (cancelListMatch) {
+    const cancels = getCancellationRequests();
+    if (cancels.length === 0) { await sendMessage(replyTo, '📋 אין בקשות ביטול ממתינות'); return; }
+    const lines = cancels.map(a => `🔹 ${a.name}\n   📅 ${a.date} בשעה ${a.time}\n   אשר: אשר ביטול ${a.name} | דחה: דחה ביטול ${a.name}`);
+    await sendMessage(replyTo, `⚠️ בקשות ביטול (${cancels.length}):\n\n${lines.join('\n\n')}`);
     return;
   }
 
   if (listMatch) {
     const pending = getPendingAppointments();
     if (pending.length === 0) {
-      await sendMessage(OWNER, '📋 אין בקשות תור ממתינות כרגע');
+      await sendMessage(replyTo, '📋 אין בקשות תור ממתינות כרגע');
       return;
     }
     const lines = pending.map((a) => {
       const areas = Array.isArray(a.areas) ? a.areas.join(', ') : a.areas;
       return `🔹 ${a.name}\n   📅 ${a.date} בשעה ${a.time}\n   🎯 ${areas}\n   אישור: אישור ${a.name}`;
     });
-    await sendMessage(OWNER, `📋 בקשות ממתינות (${pending.length}):\n\n${lines.join('\n\n')}`);
+    await sendMessage(replyTo, `📋 בקשות ממתינות (${pending.length}):\n\n${lines.join('\n\n')}`);
     return;
   }
 
-  // unrecognized command — no reply to avoid feedback loops
+  if (/^(עזרה|פקודות|מה הפקודות|help|\?)$/i.test(body)) {
+    await sendMessage(replyTo,
+      `📋 פקודות זמינות:\n\n` +
+      `✅ *אישור <שם>* – אישור תור\n` +
+      `❌ *דחייה <שם>* – דחיית תור\n` +
+      `🚫 *בטל תור <שם>* – ביטול תור מאושר + מחיקה מיומן\n` +
+      `⚠️ *אשר ביטול / דחה ביטול <שם>*\n` +
+      `📋 *ביטולים* – בקשות ביטול ממתינות\n` +
+      `🗑️ *מחק <שם>* – מחיקת בקשה ממתינה\n` +
+      `🗑️ *מחק ממתינות* – מחיקת כל הממתינות\n` +
+      `💬 *תשובה <טלפון> <טקסט>* – ענה ללקוח\n` +
+      `🏁 *סיים <טלפון>* – הנחיות אחרי טיפול\n` +
+      `🧹 *נקה <טלפון>* – ניקוי שיחה\n` +
+      `🔇 *השתק <טלפון>* – הבוט לא יענה (זמני)\n` +
+      `🔊 *המשך <טלפון>* – הפעל בוט מחדש\n` +
+      `🚫 *הסר מבוט <טלפון>* – הבוט ידלג (מצ'אט הלקוח)\n` +
+      `✅ *הוסף לבוט <טלפון>* – החזר לטיפול הבוט\n` +
+      `🔒 *חסום / שחרר <טלפון>*\n` +
+      `📋 *רשימה* – ממתינים לאישור\n` +
+      `📅 *תורים היום*\n` +
+      `📊 *סטטיסטיקה*\n` +
+      `📢 *שלח לכולם <הודעה>*\n` +
+      `🧠 *למד: <עובדה>* – לימד את הבוט\n` +
+      `🗑️ *שכח: <עובדה>* – מחק עובדה\n` +
+      `📚 *ידע* – הצג מה הבוט יודע`
+    );
+    return;
+  }
+
+  // לא פקודה מוכרת — הבוט חושב ועונה כעוזר חכם למנהל
+  const aiReply = await processAdminMessage(replyTo, body).catch(() => null);
+  if (aiReply) await sendMessage(replyTo, aiReply);
 }
 
 // ── Daily summary ─────────────────────────────────────────────────────────────

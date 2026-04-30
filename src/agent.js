@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
-import { saveAppointment, getNextAppointmentByPhone, cancelCustomerAppointment } from './store.js';
+import { saveAppointment, getNextAppointmentByPhone, cancelCustomerAppointment, requestCancellation, getPendingAppointments, getTodayAppointments, getStatistics, getKnowledge } from './store.js';
 import { sendMessage, formatPhone } from './whatsapp.js';
 import { ownerApprovalRequest } from './messages.js';
 import { checkAvailability } from './calendar.js';
@@ -54,6 +54,14 @@ const SYSTEM_PROMPT_BASE = `חוק ברזל: כתוב אך ורק בעברית. 
 משך טיפול: שעה אחת
 
 ━━━━━━━━━━━━━━━━━━
+הטכנולוגיה שלנו
+━━━━━━━━━━━━━━━━━━
+• מכונה: Elysion Pro – אחת המכונות המתקדמות בעולם להסרת שיער בלייזר
+• מתאימה לכל סוגי העור והשיער
+• טיפול מהיר, יעיל ובטוח
+• מאושרת על ידי משרד הבריאות
+
+━━━━━━━━━━━━━━━━━━
 מבצעים מיוחדים
 ━━━━━━━━━━━━━━━━━━
 • בית שחי ב-50₪ לטיפול בודד – ללא התחייבות (במקום 100₪/170₪) – לנשים ולגברים כאחד
@@ -103,7 +111,9 @@ const SYSTEM_PROMPT_BASE = `חוק ברזל: כתוב אך ורק בעברית. 
 • המר תאריכים יחסיים ("היום", "מחר") לפורמט DD/MM/YYYY
 • זהה מין מהשיחה – אל תשאל ישירות
 • לעולם אל תעביר ערכים כמו "לא ידוע" – שאל עוד קודם
-• אחרי הפעלת הכלי – אמור ללקוח שהתור ממתין לאישור מנהל
+• לאחר איסוף כל הפרטים – הצג ללקוח סיכום ושאל "לאשר? ✅" לפני הפעלת הכלי. דוגמה: "סיכום התור:\n📅 [תאריך] בשעה [שעה]\n🎯 [אזורים]\nלאשר? ✅"
+• הפעל את הכלי רק אחרי שהלקוח אישר (כן / מאושר / אשר / אוקי וכדומה)
+• אחרי הפעלת הכלי – אמור ללקוח שהבקשה נשלחה לאישור המנהל
 
 ━━━━━━━━━━━━━━━━━━
 נושאי שיחה מותרים
@@ -114,6 +124,12 @@ const SYSTEM_PROMPT_BASE = `חוק ברזל: כתוב אך ורק בעברית. 
   "אני כאן רק לשירות קליניקת טיקטק לייזר 😊 לכל שאלה על הסרת שיער בלייזר אשמח לעזור!"
 • במקרה של ספק – ענה כאילו זה לקוח פוטנציאלי. עדיף לענות פעם אחת יותר מדי מאשר לפספס לקוח`;
 
+function buildKnowledgeSection() {
+  const facts = getKnowledge();
+  if (!facts.length) return '';
+  return `\n━━━━━━━━━━━━━━━━━━\nמידע נוסף על הקליניקה\n━━━━━━━━━━━━━━━━━━\n${facts.map(f => `• ${f}`).join('\n')}`;
+}
+
 function buildSystemPrompt() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -123,7 +139,7 @@ function buildSystemPrompt() {
   const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
   const nextWeek = new Date(now); nextWeek.setDate(now.getDate() + 7);
 
-  return SYSTEM_PROMPT_BASE
+  return (SYSTEM_PROMPT_BASE + buildKnowledgeSection())
     .replace(/\{\{TODAY\}\}/g, fmt(now))
     .replace(/\{\{DAY\}\}/g, days[now.getDay()])
     .replace(/\{\{TOMORROW\}\}/g, fmt(tomorrow))
@@ -232,17 +248,17 @@ export async function processMessage(phone, userMessage, history) {
       return 'מצטערים, הייתה בעיה בעיבוד הפרטים 🙏 אנא נסה שוב';
     }
 
-    // כלי: ביטול תור
+    // כלי: ביטול תור — שולח לאישור מנהל
     if (toolCall.function.name === 'cancel_appointment') {
-      const cancelled = cancelCustomerAppointment(phone);
-      if (!cancelled) return 'לא מצאתי תור פעיל לביטול 😊 צור קשר ישירות אם צריך עזרה';
-      const notify = `❌ ${cancelled.name} ביטל/ה את התור ל-${cancelled.date} בשעה ${cancelled.time}`;
+      const appt = requestCancellation(phone);
+      if (!appt) return 'לא מצאתי תור פעיל לביטול 😊 צור קשר ישירות אם צריך עזרה';
+      const notify = `⚠️ בקשת ביטול תור\n👤 ${appt.name}\n📅 ${appt.date} בשעה ${appt.time}\n📞 ${formatPhone(phone)}\n\nלאישור הביטול: *אשר ביטול ${appt.name}*\nלדחיית הביטול: *דחה ביטול ${appt.name}*`;
       const recipients = [`${process.env.OWNER_NUMBER}@s.whatsapp.net`];
       if (process.env.ADMIN_NUMBER) recipients.push(`${process.env.ADMIN_NUMBER}@s.whatsapp.net`);
       for (const r of recipients) {
         try { await sendMessage(r, notify); } catch (err) { console.error('שגיאה בהודעת ביטול:', err.message); }
       }
-      return `התור שלך ל-${cancelled.date} בשעה ${cancelled.time} בוטל ✅\nנשמח לראות אותך בפעם אחרת! 💙`;
+      return `בקשת הביטול שלך נשלחה לאישור המנהל ✅\nניצור איתך קשר בהקדם 😊`;
     }
 
     // כלי: תור קרוב של הלקוח
@@ -327,4 +343,55 @@ export async function processMessage(phone, userMessage, history) {
   }
 
   return choice.message.content || '';
+}
+
+const adminHistories = new Map();
+
+export async function processAdminMessage(adminId, message) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+
+  const pending  = getPendingAppointments();
+  const todayApp = getTodayAppointments();
+  const stats    = getStatistics();
+
+  const knowledge = getKnowledge();
+  const systemPrompt = `אתה עוזר חכם למנהלת קליניקת טיקטק לייזר בהרצליה.
+תענה קצר, ישיר ועברית בלבד.
+
+מידע עדכני על העסק:
+- תאריך היום: ${today}
+- תורים היום (${todayApp.length}): ${todayApp.length ? todayApp.map(a => `${a.time} ${a.name}`).join(', ') : 'אין'}
+- ממתינים לאישור (${pending.length}): ${pending.length ? pending.map(a => `${a.name} ב-${a.date} ${a.time}`).join(', ') : 'אין'}
+- סטטיסטיקה: ${stats.total} תורים סה"כ, ${stats.week} השבוע, ${stats.month} החודש
+${knowledge.length ? `\nעובדות על הקליניקה:\n${knowledge.map(f => `- ${f}`).join('\n')}` : ''}
+פקודות זמינות: אישור/דחייה/מחק <שם>, רשימה, תורים היום, סטטיסטיקה, תשובה <טלפון> <טקסט>, סיים/נקה/השתק/המשך/חסום/שחרר/הסר מבוט/הוסף לבוט <טלפון>, מחק ממתינות, שלח לכולם <הודעה>, למד:/שכח: <עובדה>, ידע.
+
+אם המנהל שואל על פקודה — הסבר. אם שואל על לקוח או תור — ענה לפי המידע שיש לך. אם שואל שאלה כללית על העסק — ענה בצורה עניינית.`;
+
+  if (!adminHistories.has(adminId)) adminHistories.set(adminId, []);
+  const history = adminHistories.get(adminId);
+  history.push({ role: 'user', content: message });
+  if (history.length > 10) history.splice(0, history.length - 10);
+
+  const MODELS = ['openai/gpt-4o-mini', 'openai/gpt-oss-120b:free'];
+  for (const model of MODELS) {
+    try {
+      const res = await openai.chat.completions.create({
+        model,
+        messages: [{ role: 'system', content: systemPrompt }, ...history],
+        max_tokens: 512,
+      }, { timeout: 20_000 });
+      const reply = res.choices?.[0]?.message?.content || '';
+      if (reply) {
+        history.push({ role: 'assistant', content: reply });
+        return reply;
+      }
+    } catch (err) {
+      console.error(`Admin AI error (${model}):`, err.message);
+      if (model === MODELS[MODELS.length - 1]) return null;
+    }
+  }
+  return null;
 }
