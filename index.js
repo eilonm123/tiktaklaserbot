@@ -1,6 +1,9 @@
 process.env.TZ = 'Asia/Jerusalem';
 import 'dotenv/config';
 import express from 'express';
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import QRCode from 'qrcode';
 import { client, sendMessage, formatPhone, getOwnLid } from './src/whatsapp.js';
 import { processMessage, processAdminMessage } from './src/agent.js';
@@ -101,6 +104,19 @@ app.get('/qr', async (req, res) => {
 app.get('/health', async (req, res) => {
   const state = await client.getState().catch(() => 'UNKNOWN');
   res.json({ ok: true, whatsapp: state });
+});
+
+app.get('/export-auth', (req, res) => {
+  const secret = process.env.EXPORT_SECRET;
+  if (!secret || req.query.secret !== secret) return res.status(403).send('Forbidden');
+  try {
+    const tarPath = join(process.cwd(), '_export.tar.gz');
+    execSync(`tar -czf ${tarPath} -C ${process.cwd()} .wwebjs_auth`);
+    const b64 = readFileSync(tarPath).toString('base64');
+    res.type('text/plain').send(b64);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
 });
 
 app.get('/messages', (req, res) => res.json(recentMessages));
