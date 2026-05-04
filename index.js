@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Jerusalem';
 import 'dotenv/config';
 import express from 'express';
 import QRCode from 'qrcode';
