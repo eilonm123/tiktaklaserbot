@@ -27,6 +27,7 @@ let _ownPhone = null;
 let _ownLid = null;
 
 async function connect() {
+  try {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -134,6 +135,10 @@ async function connect() {
       _emitter.emit('message', _adapt(raw));
     }
   });
+  } catch (err) {
+    console.error('❌ שגיאה בחיבור WhatsApp:', err.message);
+    setTimeout(connect, 10_000);
+  }
 }
 
 function _body(raw) {
